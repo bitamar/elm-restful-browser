@@ -64,6 +64,8 @@ init =
 -- UPDATE
 type Action =
   Reload
+  | Previous
+  | Next
   | UpdateDataFromServer (Result Http.Error Response)
 
 
@@ -74,17 +76,31 @@ update action model =
       let
         url = Config.backendUrl ++ model.path
       in
-        ( { model
-          | status = Fetching
-          }
+        ( { model | status = Fetching }
         , getJson url Config.accessToken
         )
 
+    Previous ->
+      let
+        url =
+          case model.response.previous of
+            Just url -> url
+            Nothing -> ""
+      in
+        ( model, getJson url Config.accessToken)
+
+    Next ->
+      let
+        url =
+          case model.response.next of
+            Just url -> url
+            Nothing -> ""
+      in
+        ( model, getJson url Config.accessToken)
 
     UpdateDataFromServer response ->
       case response of
         Ok response ->
-          let _ = Debug.log "response" response in
           ( { model
             | status = Fetched
             , response = response
@@ -97,9 +113,7 @@ update action model =
             message = getErrorMessageFromHttpResponse error
             _ = Debug.log "Error" message
           in
-            ( { model
-              | status = HttpError error
-              }
+            ( { model | status = HttpError error }
             , Effects.none
             )
 
@@ -130,7 +144,8 @@ view address model =
           ]
   in
     div []
-      [ button [ onClick address Reload ] [ text "Reload" ]
+      [ button [ onClick address Previous ] [ text "<" ]
+      , button [ onClick address Next ] [ text ">" ]
       , table [ class "table table-striped" ]
         [ thead []
           [ tr []
@@ -142,6 +157,7 @@ view address model =
           ]
         , tbody [] ( List.map row model.response.records )
         ]
+      , div [] [ text <| toString model.response.next ]
       ]
 
 
@@ -163,16 +179,17 @@ getJson url accessToken =
 decodeResponse : Json.Decode.Decoder Response
 decodeResponse =
   Json.Decode.object4 Response
-    (Json.Decode.at ["data"]
+    ( Json.Decode.at ["data"]
     <| Json.Decode.list
     <| Json.Decode.object4 Record
       ("id" := Json.Decode.int)
       ("employee" := Json.Decode.string)
       ("start" := Json.Decode.int)
-      (Json.Decode.maybe ("end" := Json.Decode.int)))
+      (Json.Decode.maybe ("end" := Json.Decode.int))
+    )
   ("count" := Json.Decode.int)
-  (Json.Decode.maybe ("next" := Json.Decode.string))
-  (Json.Decode.maybe ("previous" := Json.Decode.string))
+  (Json.Decode.maybe (Json.Decode.at["next"] <| ("href" := Json.Decode.string)))
+  (Json.Decode.maybe (Json.Decode.at["previous"] <| ("href" := Json.Decode.string)))
 
 
 
